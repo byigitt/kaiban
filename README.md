@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kaiban
+AI Powered Kanban Board, because planning your job shouldnt be your job.
 
-## Getting Started
-
-First, run the development server:
+## Local Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Visit [http://localhost:3000](http://localhost:3000) after the dev server starts. Stick to the App Router (`app/`) when adding new routes or layouts.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create a `.env` by copying `.env.example` and updating credentials:
 
-## Learn More
+```bash
+cp .env.example .env
+```
 
-To learn more about Next.js, take a look at the following resources:
+`DATABASE_URL` must point to a PostgreSQL instance (local or hosted). The default string expects a database named `kaiban` with the public schema.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Database & Prisma
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Prisma migrations live under `prisma/`. The root schema is `prisma/schema.prisma`, which imports modular model files from `prisma/models/`.
+- Entities included so far:
+  - `Conversation` with related `ConversationMessage` records for assistant/user/system turns.
+  - `Note` records for storing structured notes, linked to conversations and keyed by `caseNumber` so Gemini updates stay in sync with the board.
+- Generate the client and run migrations with:
 
-## Deploy on Vercel
+```bash
+pnpm prisma migrate dev
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Use the shared client helper at `@/lib/prisma` inside server code.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## API Contracts
+
+- `POST /api/create-board` accepts `{ text }`, persists the resulting conversation, notes, and Gemini messages, and responds with `{ tasks, conversationId }`.
+- `POST /api/update-task` expects `{ command, conversationId }`, appends the request/response messages to that conversation, and updates the matching `Note` status.
+
+## Validation & Build
+
+- `pnpm typecheck` runs `tsc --noEmit`.
+- `pnpm lint` applies the Next.js ESLint config.
+- `pnpm build` creates the production bundle (paired with `pnpm start` for smoke tests when needed).

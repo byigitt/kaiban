@@ -1,0 +1,25 @@
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model Conversation {
+  id        String                  @id @default(cuid())
+  topic     String?
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+  messages  ConversationMessage[]
+  notes     Note[]
+  boards    Board[]
+}
+
+model ConversationMessage {
+  id              String      @id @default(cuid())
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId  String
+  role            MessageRole
+  content         String
+  metadata        Json?
+  createdAt       DateTime    @default(now())
+}

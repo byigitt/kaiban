@@ -1,0 +1,26 @@
+model Board {
+  id             String        @id @default(cuid())
+  name           String
+  title          String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  columns        BoardColumn[]
+  notes          Note[]
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  conversationId String?
+
+  @@index([conversationId])
+}
+
+model BoardColumn {
+  id        String   @id @default(cuid())
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId   String
+  title     String
+  helper    String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([boardId])
+}
