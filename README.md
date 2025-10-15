@@ -1,46 +1,52 @@
 # Kaiban
-AI Powered Kanban Board, because planning your job shouldnt be your job.
+AI-powered Kanban automation that turns natural language into actionable board updates.
 
-## Local Development
+![Example dashboard showcasing Kaiban](images/example-dashboard.png)
+
+## Overview
+Kaiban pairs a Next.js App Router frontend with Gemini-driven function calls to translate freeform conversation into structured Kanban tasks. Conversations stay synchronized with task notes so every status change is traceable and auditable.
+
+## Key Features
+- Natural-language task creation mapped to `{ caseNumber, description, status }` contracts.
+- Conversational status updates routed through `update_task_status` for deterministic board changes.
+- Shared Prisma models and notes storage keep the AI output aligned with the UI.
+- Tailwind-powered UI components deliver an accessible, responsive board experience.
+
+## Getting Started
+Install dependencies and launch the local dev server:
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000) after the dev server starts. Stick to the App Router (`app/`) when adding new routes or layouts.
+Visit [http://localhost:3000](http://localhost:3000) once the server is running. Stick to the App Router (`app/`) for new routes and layouts.
 
-## Environment
-
-Create a `.env` by copying `.env.example` and updating credentials:
+## Environment Setup
+Copy the example environment file and provide the required secrets:
 
 ```bash
 cp .env.example .env
 ```
 
-`DATABASE_URL` must point to a PostgreSQL instance (local or hosted). The default string expects a database named `kaiban` with the public schema.
+Configure `DATABASE_URL` to reference a PostgreSQL instance (local or hosted). The default string expects a database named `kaiban` using the `public` schema.
 
 ## Database & Prisma
-
-- Prisma migrations live under `prisma/`. The root schema is `prisma/schema.prisma`, which imports modular model files from `prisma/models/`.
-- Entities included so far:
-  - `Conversation` with related `ConversationMessage` records for assistant/user/system turns.
-  - `Note` records for storing structured notes, linked to conversations and keyed by `caseNumber` so Gemini updates stay in sync with the board.
-- Generate the client and run migrations with:
+- Migrations live under `prisma/`; `prisma/schema.prisma` composes modular models from `prisma/models/`.
+- Core entities include `Conversation`, `ConversationMessage`, and `Note`, keyed by `caseNumber` to mirror board cards.
+- Generate the client and apply migrations with:
 
 ```bash
 pnpm prisma migrate dev
 ```
 
-- Use the shared client helper at `@/lib/prisma` inside server code.
+- Import the shared client helper from `@/lib/prisma` inside server modules.
 
 ## API Contracts
+- `POST /api/create-board` accepts `{ text }`, persists the conversation, creates notes, and returns `{ tasks, conversationId }`.
+- `POST /api/update-task` expects `{ command, conversationId }`, appends conversational turns, and updates the targeted note status.
 
-- `POST /api/create-board` accepts `{ text }`, persists the resulting conversation, notes, and Gemini messages, and responds with `{ tasks, conversationId }`.
-- `POST /api/update-task` expects `{ command, conversationId }`, appends the request/response messages to that conversation, and updates the matching `Note` status.
-
-## Validation & Build
-
-- `pnpm typecheck` runs `tsc --noEmit`.
-- `pnpm lint` applies the Next.js ESLint config.
-- `pnpm build` creates the production bundle (paired with `pnpm start` for smoke tests when needed).
+## Developer Workflow
+- `pnpm typecheck` runs `tsc --noEmit` to validate types.
+- `pnpm build` outputs the production bundle; pair with `pnpm start` when smoke-testing.
+- Prisma Studio (`pnpm prisma studio`) is helpful for inspecting conversation and notes data during development.
