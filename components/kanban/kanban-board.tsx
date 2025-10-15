@@ -35,11 +35,13 @@ interface KanbanBoardProps {
   onAddTask: (input: {
     status: TaskStatus;
     caseNumber: string;
+    title: string;
     description: string;
     priority: TaskPriority;
   }) => string | null;
   onEditTask: (caseNumber: string, input: {
     newCaseNumber?: string;
+    title?: string;
     description?: string;
     priority?: TaskPriority;
   }) => Promise<string | null>;
@@ -47,6 +49,7 @@ interface KanbanBoardProps {
   onAddColumn: (column: { title: string; helper: string }) => void;
   onEditColumn: (id: string, column: { title: string; helper: string }) => void;
   onRemoveColumn: (id: string) => void;
+  onTaskClick?: (task: Task) => void;
 }
 
 export function KanbanBoard({
@@ -59,6 +62,7 @@ export function KanbanBoard({
   onAddColumn,
   onEditColumn,
   onRemoveColumn,
+  onTaskClick,
 }: KanbanBoardProps) {
   const [hoveredStatus, setHoveredStatus] =
     React.useState<TaskStatus | null>(null);
@@ -66,12 +70,14 @@ export function KanbanBoard({
   const [activeForm, setActiveForm] = React.useState<{
     status: TaskStatus | null;
     caseNumber: string;
+    title: string;
     description: string;
     priority: TaskPriority;
     error: string | null;
   }>({
     status: null,
     caseNumber: "",
+    title: "",
     description: "",
     priority: "medium",
     error: null,
@@ -79,6 +85,7 @@ export function KanbanBoard({
   const [editingTask, setEditingTask] = React.useState<{
     caseNumber: string | null;
     newCaseNumber: string;
+    title: string;
     description: string;
     priority: TaskPriority;
     error: string | null;
@@ -86,6 +93,7 @@ export function KanbanBoard({
   }>({
     caseNumber: null,
     newCaseNumber: "",
+    title: "",
     description: "",
     priority: "medium",
     error: null,
@@ -277,16 +285,24 @@ export function KanbanBoard({
                       setDraggingTask(null);
                       setHoveredStatus(null);
                     }}
+                    onClick={() => {
+                      if (onTaskClick) {
+                        onTaskClick(task);
+                      }
+                    }}
                     className={cn(
-                      "cursor-grab rounded-lg border bg-background/95 p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing",
+                      "cursor-pointer rounded-lg border bg-background/95 p-3 shadow-sm transition hover:shadow-md hover:border-ring",
                       isDragging && "opacity-70 ring-2 ring-ring"
                     )}
                   >
                     <header className="flex items-start justify-between gap-2">
-                      <div className="flex flex-col gap-1.5">
+                      <div className="flex flex-1 flex-col gap-1.5">
                         <p className="text-xs font-semibold text-muted-foreground">
                           {task.caseNumber}
                         </p>
+                        <h4 className="text-sm font-semibold leading-tight text-foreground">
+                          {task.title}
+                        </h4>
                         <span
                           className={cn(
                             "inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize",
@@ -310,6 +326,7 @@ export function KanbanBoard({
                             setEditingTask({
                               caseNumber: task.caseNumber,
                               newCaseNumber: task.caseNumber,
+                              title: task.title,
                               description: task.description,
                               priority: task.priority,
                               error: null,
@@ -343,9 +360,6 @@ export function KanbanBoard({
                         </button>
                       </div>
                     </header>
-                    <p className="mt-2 text-sm leading-5 text-foreground">
-                      {task.description}
-                    </p>
                   </article>
                 );
               })}
@@ -368,6 +382,13 @@ export function KanbanBoard({
                       }));
                       return;
                     }
+                    if (!activeForm.title.trim()) {
+                      setActiveForm((previous) => ({
+                        ...previous,
+                        error: "Title is required.",
+                      }));
+                      return;
+                    }
                     if (!activeForm.description.trim()) {
                       setActiveForm((previous) => ({
                         ...previous,
@@ -378,6 +399,7 @@ export function KanbanBoard({
                     const message = onAddTask({
                       status: column.id,
                       caseNumber: activeForm.caseNumber.trim(),
+                      title: activeForm.title.trim(),
                       description: activeForm.description.trim(),
                       priority: activeForm.priority,
                     });
@@ -391,6 +413,7 @@ export function KanbanBoard({
                     setActiveForm({
                       status: null,
                       caseNumber: "",
+                      title: "",
                       description: "",
                       priority: "medium",
                       error: null,
@@ -407,6 +430,7 @@ export function KanbanBoard({
                         setActiveForm({
                           status: null,
                           caseNumber: "",
+                          title: "",
                           description: "",
                           priority: "medium",
                           error: null,
@@ -429,6 +453,18 @@ export function KanbanBoard({
                     }
                     placeholder="CASE-101"
                     aria-label="Task case number"
+                  />
+                  <Input
+                    value={activeForm.title}
+                    onChange={(event) =>
+                      setActiveForm((previous) => ({
+                        ...previous,
+                        title: event.target.value,
+                        error: null,
+                      }))
+                    }
+                    placeholder="Task title"
+                    aria-label="Task title"
                   />
                   <Textarea
                     value={activeForm.description}
@@ -491,6 +527,7 @@ export function KanbanBoard({
                     setActiveForm({
                       status: column.id,
                       caseNumber: "",
+                      title: "",
                       description: "",
                       priority: "medium",
                       error: null,
@@ -587,6 +624,7 @@ export function KanbanBoard({
             setEditingTask({
               caseNumber: null,
               newCaseNumber: "",
+              title: "",
               description: "",
               priority: "medium",
               error: null,
@@ -617,6 +655,13 @@ export function KanbanBoard({
                 }));
                 return;
               }
+              if (!editingTask.title.trim()) {
+                setEditingTask((prev) => ({
+                  ...prev,
+                  error: "Title is required.",
+                }));
+                return;
+              }
               if (!editingTask.description.trim()) {
                 setEditingTask((prev) => ({
                   ...prev,
@@ -629,6 +674,7 @@ export function KanbanBoard({
 
               const updates: {
                 newCaseNumber?: string;
+                title?: string;
                 description?: string;
                 priority?: TaskPriority;
               } = {};
@@ -639,6 +685,12 @@ export function KanbanBoard({
               const originalTask = tasks.find(
                 (t) => t.caseNumber === editingTask.caseNumber
               );
+              if (
+                originalTask &&
+                editingTask.title.trim() !== originalTask.title
+              ) {
+                updates.title = editingTask.title.trim();
+              }
               if (
                 originalTask &&
                 editingTask.description.trim() !== originalTask.description
@@ -653,6 +705,7 @@ export function KanbanBoard({
                 setEditingTask({
                   caseNumber: null,
                   newCaseNumber: "",
+                  title: "",
                   description: "",
                   priority: "medium",
                   error: null,
@@ -672,6 +725,7 @@ export function KanbanBoard({
                 setEditingTask({
                   caseNumber: null,
                   newCaseNumber: "",
+                  title: "",
                   description: "",
                   priority: "medium",
                   error: null,
@@ -697,6 +751,24 @@ export function KanbanBoard({
                   }
                   disabled={editingTask.isSubmitting}
                   placeholder="TASK-101"
+                />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="edit-title" className="text-sm font-medium">
+                  Title
+                </label>
+                <Input
+                  id="edit-title"
+                  value={editingTask.title}
+                  onChange={(event) =>
+                    setEditingTask((prev) => ({
+                      ...prev,
+                      title: event.target.value,
+                      error: null,
+                    }))
+                  }
+                  disabled={editingTask.isSubmitting}
+                  placeholder="Task title"
                 />
               </div>
               <div className="space-y-2">
@@ -759,6 +831,7 @@ export function KanbanBoard({
                   setEditingTask({
                     caseNumber: null,
                     newCaseNumber: "",
+                    title: "",
                     description: "",
                     priority: "medium",
                     error: null,

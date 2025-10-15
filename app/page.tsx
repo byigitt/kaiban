@@ -9,6 +9,7 @@ import {
   type KanbanColumn,
 } from "@/components/kanban/kanban-board";
 import { BoardSelector } from "@/components/board-selector";
+import { TaskDetailDrawer } from "@/components/task-detail-drawer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AppIcon } from "@/components/ui/app-icon";
 import { Button } from "@/components/ui/button";
@@ -41,12 +42,31 @@ interface CreateBoardResponse {
 }
 
 interface ChatResponse {
-  action: "update_status" | "delete" | "update_properties";
-  caseNumber: string;
+  action: "update_status" | "delete" | "update_properties" | "create_board" | "update_board" | "delete_board" | "create_column" | "update_column" | "delete_column";
+  caseNumber?: string;
   newStatus?: TaskStatus;
   newCaseNumber?: string;
+  newTitle?: string;
   newDescription?: string;
   newPriority?: string;
+  board?: {
+    id: string;
+    name: string;
+    columns: Array<{
+      id: string;
+      title: string;
+      helper: string | null;
+      order: number;
+    }>;
+  };
+  boardId?: string;
+  column?: {
+    id: string;
+    title: string;
+    helper: string | null;
+    order: number;
+  };
+  columnTitle?: string;
 }
 
 type NoticeTone = "info" | "error";
@@ -114,6 +134,8 @@ export default function HomePage() {
   const [chatWidth, setChatWidth] = React.useState(480);
   const [isResizing, setIsResizing] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [selectedTask, setSelectedTask] = React.useState<Task | null>(null);
+  const [isTaskDrawerOpen, setIsTaskDrawerOpen] = React.useState(false);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
   const hasTasks = tasks.length > 0;
@@ -173,8 +195,9 @@ export default function HomePage() {
 
       if (data.tasks && data.tasks.length > 0) {
         const loadedTasks: Task[] = data.tasks.map(
-          (task: { caseNumber: string; body: string; status: string; priority: string }) => ({
+          (task: { caseNumber: string; title: string | null; body: string; status: string; priority: string }) => ({
             caseNumber: task.caseNumber,
+            title: task.title || task.caseNumber,
             description: task.body,
             status: task.status,
             priority: task.priority as "low" | "medium" | "high",
@@ -462,6 +485,9 @@ export default function HomePage() {
             if (data.newCaseNumber) {
               updatedTask.caseNumber = data.newCaseNumber;
             }
+            if (data.newTitle) {
+              updatedTask.title = data.newTitle;
+            }
             if (data.newDescription) {
               updatedTask.description = data.newDescription;
             }
@@ -475,6 +501,9 @@ export default function HomePage() {
           const changes = [];
           if (data.newCaseNumber) {
             changes.push(`renamed to ${data.newCaseNumber}`);
+          }
+          if (data.newTitle) {
+            changes.push("title updated");
           }
           if (data.newDescription) {
             changes.push("description updated");
@@ -490,6 +519,138 @@ export default function HomePage() {
             timestamp: new Date(),
           };
           setMessages((prev) => [...prev, aiMessage]);
+        } else if (data.action === "create_board") {
+          if (data.board) {
+            const newBoard: Board = {
+              id: data.board.id,
+              name: data.board.name,
+              taskCount: 0,
+            };
+            setBoards((prev) => [newBoard, ...prev]);
+            setActiveBoard(newBoard);
+            localStorage.setItem("activeBoardId", newBoard.id);
+
+            const newColumns: KanbanColumn[] = data.board.columns.map((col) => ({
+              id: col.title,
+              title: col.title,
+              helper: col.helper ?? "",
+            }));
+            setColumns(newColumns);
+
+            const aiMessage: ChatMessage = {
+              id: (Date.now() + 1).toString(),
+              role: "assistant",
+              content: `I've created a new board "${data.board.name}" with ${data.board.columns.length} column(s).`,
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, aiMessage]);
+          }
+        } else if (data.action === "update_board") {
+          if (data.board) {
+            setBoards((prev) =>
+              prev.map((board) =>
+                board.id === data.board!.id
+                  ? { ...board, name: data.board!.name }
+                  : board
+              )
+            );
+
+            if (activeBoard?.id === data.board.id) {
+              setActiveBoard((prev) =>
+                prev ? { ...prev, name: data.board!.name } : null
+              );
+            }
+
+            const aiMessage: ChatMessage = {
+              id: (Date.now() + 1).toString(),
+              role: "assistant",
+              content: `I've renamed the board to "${data.board.name}".`,
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, aiMessage]);
+          }
+        } else if (data.action === "delete_board") {
+          if (data.boardId) {
+            const deletedBoardName = boards.find((b) => b.id === data.boardId)?.name;
+            setBoards((prev) => prev.filter((board) => board.id !== data.boardId));
+
+            if (activeBoard?.id === data.boardId) {
+              const remainingBoards = boards.filter((board) => board.id !== data.boardId);
+              if (remainingBoards.length > 0) {
+                handleSelectBoard(remainingBoards[0]);
+              } else {
+                setActiveBoard(null);
+                localStorage.removeItem("activeBoardId");
+                setTasks([]);
+                setColumns(DEFAULT_COLUMNS);
+              }
+            }
+
+            const aiMessage: ChatMessage = {
+              id: (Date.now() + 1).toString(),
+              role: "assistant",
+              content: `I've deleted the board "${deletedBoardName}".`,
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, aiMessage]);
+          }
+        } else if (data.action === "create_column") {
+          if (data.column) {
+            const newColumn: KanbanColumn = {
+              id: data.column.title,
+              title: data.column.title,
+              helper: data.column.helper ?? "",
+            };
+            setColumns((prev) => [...prev, newColumn]);
+
+            const aiMessage: ChatMessage = {
+              id: (Date.now() + 1).toString(),
+              role: "assistant",
+              content: `I've added a new column "${data.column.title}" to the board.`,
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, aiMessage]);
+          }
+        } else if (data.action === "update_column") {
+          if (data.column) {
+            setColumns((prev) =>
+              prev.map((col) =>
+                col.id === data.column!.id
+                  ? {
+                      ...col,
+                      id: data.column!.title,
+                      title: data.column!.title,
+                      helper: data.column!.helper ?? "",
+                    }
+                  : col
+              )
+            );
+
+            const aiMessage: ChatMessage = {
+              id: (Date.now() + 1).toString(),
+              role: "assistant",
+              content: `I've updated the column to "${data.column.title}".`,
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, aiMessage]);
+          }
+        } else if (data.action === "delete_column") {
+          if (data.columnTitle) {
+            setColumns((prev) =>
+              prev.filter((col) => col.title !== data.columnTitle)
+            );
+            setTasks((prev) =>
+              prev.filter((task) => task.status !== data.columnTitle)
+            );
+
+            const aiMessage: ChatMessage = {
+              id: (Date.now() + 1).toString(),
+              role: "assistant",
+              content: `I've deleted the column "${data.columnTitle}" and removed any tasks in it.`,
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, aiMessage]);
+          }
         }
       }
     } catch (error) {
@@ -548,18 +709,21 @@ export default function HomePage() {
     ({
       status,
       caseNumber,
+      title,
       description,
       priority,
     }: {
       status: TaskStatus;
       caseNumber: string;
+      title: string;
       description: string;
       priority: "low" | "medium" | "high";
     }) => {
       const trimmedCaseNumber = caseNumber.trim().toUpperCase();
+      const trimmedTitle = title.trim();
       const trimmedDescription = description.trim();
-      if (!trimmedCaseNumber || !trimmedDescription) {
-        return "Both a case number and description are required.";
+      if (!trimmedCaseNumber || !trimmedTitle || !trimmedDescription) {
+        return "Case number, title, and description are all required.";
       }
       const exists = tasks.some(
         (task) => task.caseNumber === trimmedCaseNumber
@@ -575,6 +739,7 @@ export default function HomePage() {
         ...previous,
         {
           caseNumber: trimmedCaseNumber,
+          title: trimmedTitle,
           description: trimmedDescription,
           status,
           priority,
@@ -589,38 +754,57 @@ export default function HomePage() {
     [tasks]
   );
 
-  const handleRemoveTask = React.useCallback((caseNumber: string) => {
-    let removedTask: Task | null = null;
-    setTasks((previous) => {
-      const index = previous.findIndex(
-        (task) => task.caseNumber === caseNumber
-      );
-      if (index === -1) {
-        return previous;
+  const handleRemoveTask = React.useCallback(
+    async (caseNumber: string) => {
+      if (!conversationId) {
+        setNotice({
+          tone: "error",
+          message: "No conversation active. Cannot delete task.",
+        });
+        return;
       }
-      removedTask = previous[index];
-      const next = [...previous];
-      next.splice(index, 1);
-      return next;
-    });
-    if (removedTask) {
+
+      const response = await fetch("/api/delete-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          command: `delete ${caseNumber}`,
+          conversationId,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message =
+          data && typeof data === "object" && "error" in data
+            ? String(data.error)
+            : "Failed to delete task.";
+        setNotice({
+          tone: "error",
+          message,
+        });
+        return;
+      }
+
+      setTasks((previous) =>
+        previous.filter((task) => task.caseNumber !== caseNumber)
+      );
+
       setNotice({
         tone: "info",
         message: `${caseNumber} removed from the board.`,
       });
-    } else {
-      setNotice({
-        tone: "error",
-        message: `${caseNumber} is not on the board.`,
-      });
-    }
-  }, []);
+    },
+    [conversationId]
+  );
 
   const handleEditTask = React.useCallback(
     async (
       caseNumber: string,
       updates: {
         newCaseNumber?: string;
+        title?: string;
         description?: string;
         priority?: "low" | "medium" | "high";
       }
@@ -661,6 +845,9 @@ export default function HomePage() {
       const changes = [];
       if (updates.newCaseNumber) {
         changes.push(`renamed to ${updates.newCaseNumber}`);
+      }
+      if (updates.title) {
+        changes.push("title updated");
       }
       if (updates.description) {
         changes.push("description updated");
@@ -707,6 +894,18 @@ export default function HomePage() {
       message: "Chat history cleared.",
     });
   };
+
+  const handleTaskClick = React.useCallback((task: Task) => {
+    setSelectedTask(task);
+    setIsTaskDrawerOpen(true);
+  }, []);
+
+  const handleTaskDrawerDelete = React.useCallback(
+    (caseNumber: string) => {
+      handleRemoveTask(caseNumber);
+    },
+    [handleRemoveTask]
+  );
 
   const handleAddColumn = React.useCallback(
     (column: { title: string; helper: string }) => {
@@ -836,6 +1035,7 @@ export default function HomePage() {
               onAddColumn={handleAddColumn}
               onEditColumn={handleEditColumn}
               onRemoveColumn={handleRemoveColumn}
+              onTaskClick={handleTaskClick}
             />
           </div>
         </section>
@@ -937,6 +1137,13 @@ export default function HomePage() {
       </aside>
         </>
       )}
+      <TaskDetailDrawer
+        task={selectedTask}
+        open={isTaskDrawerOpen}
+        onOpenChange={setIsTaskDrawerOpen}
+        onDelete={handleTaskDrawerDelete}
+        chatWidth={chatWidth}
+      />
     </main>
   );
 }

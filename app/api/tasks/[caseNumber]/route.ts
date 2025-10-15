@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 
 const updateTaskSchema = z.object({
   newCaseNumber: z.string().min(1).optional(),
+  title: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
   priority: taskPrioritySchema.optional(),
 });
@@ -41,9 +42,9 @@ export async function PATCH(
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  const { newCaseNumber, description, priority } = parsed.data;
+  const { newCaseNumber, title, description, priority } = parsed.data;
 
-  if (!newCaseNumber && !description && !priority) {
+  if (!newCaseNumber && !title && !description && !priority) {
     return NextResponse.json(
       { error: "At least one field must be provided for update." },
       { status: 400 }
@@ -94,6 +95,9 @@ export async function PATCH(
   if (newCaseNumber) {
     updateData.caseNumber = newCaseNumber;
   }
+  if (title) {
+    updateData.title = title;
+  }
   if (description) {
     updateData.body = description;
   }
@@ -108,6 +112,7 @@ export async function PATCH(
 
   return NextResponse.json({
     caseNumber: updatedTask.caseNumber,
+    title: updatedTask.title || updatedTask.caseNumber,
     description: updatedTask.body,
     status: updatedTask.status,
     priority: updatedTask.priority,

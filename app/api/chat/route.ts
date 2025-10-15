@@ -8,9 +8,16 @@ import {
   updateTaskStatusArgsSchema,
   deleteTaskArgsSchema,
   updateTaskPropertiesArgsSchema,
+  createBoardArgsSchema,
+  updateBoardArgsSchema,
+  deleteBoardArgsSchema,
+  createColumnArgsSchema,
+  updateColumnArgsSchema,
+  deleteColumnArgsSchema,
+  DEFAULT_TASK_STATUS_VALUES,
 } from "@/lib/gemini-contract";
 import { invokeGemini } from "@/lib/gemini";
-import { prisma } from "@/lib/prisma";
+import { prisma, getNextCaseNumber } from "@/lib/prisma";
 
 const requestSchema = z.object({
   command: z.string().min(1, "Provide a command to parse."),
@@ -43,7 +50,9 @@ export async function POST(request: Request) {
 
   try {
     const { command, conversationId, boardId } = parsed.data;
-    const functionCall = await invokeGemini(command);
+    const nextCaseNumber = await getNextCaseNumber();
+    const augmentedPrompt = `${command}\n\n[System: Start task numbering from TASK-${nextCaseNumber}]`;
+    const functionCall = await invokeGemini(augmentedPrompt);
 
     if (functionCall.name === "create_tasks_from_text") {
       const validated = createTasksArgsSchema.parse(functionCall.args);
@@ -91,12 +100,84 @@ export async function POST(request: Request) {
         action: "update_properties",
         caseNumber: validated.caseNumber,
         newCaseNumber: validated.newCaseNumber,
+        newTitle: validated.newTitle,
         newDescription: validated.newDescription,
         newPriority: validated.newPriority,
       });
+    } else if (functionCall.name === "create_board") {
+      const validated = createBoardArgsSchema.parse(functionCall.args);
+      const board = await persistBoardCreation({
+        conversationId,
+        command,
+        result: validated,
+      });
+      return NextResponse.json({
+        action: "create_board",
+        board,
+      });
+    } else if (functionCall.name === "update_board") {
+      const validated = updateBoardArgsSchema.parse(functionCall.args);
+      const board = await persistBoardUpdate({
+        conversationId,
+        command,
+        result: validated,
+        boardId,
+      });
+      return NextResponse.json({
+        action: "update_board",
+        board,
+      });
+    } else if (functionCall.name === "delete_board") {
+      const validated = deleteBoardArgsSchema.parse(functionCall.args);
+      await persistBoardDeletion({
+        conversationId,
+        command,
+        result: validated,
+        boardId,
+      });
+      return NextResponse.json({
+        action: "delete_board",
+        boardId,
+      });
+    } else if (functionCall.name === "create_column") {
+      const validated = createColumnArgsSchema.parse(functionCall.args);
+      const column = await persistColumnCreation({
+        conversationId,
+        command,
+        result: validated,
+        boardId,
+      });
+      return NextResponse.json({
+        action: "create_column",
+        column,
+      });
+    } else if (functionCall.name === "update_column") {
+      const validated = updateColumnArgsSchema.parse(functionCall.args);
+      const column = await persistColumnUpdate({
+        conversationId,
+        command,
+        result: validated,
+        boardId,
+      });
+      return NextResponse.json({
+        action: "update_column",
+        column,
+      });
+    } else if (functionCall.name === "delete_column") {
+      const validated = deleteColumnArgsSchema.parse(functionCall.args);
+      await persistColumnDeletion({
+        conversationId,
+        command,
+        result: validated,
+        boardId,
+      });
+      return NextResponse.json({
+        action: "delete_column",
+        columnTitle: validated.title,
+      });
     } else {
       throw new Error(
-        `Unexpected function call "${functionCall.name}". Expected create_tasks_from_text, update_task_status, delete_task, or update_task_properties.`
+        `Unexpected function call "${functionCall.name}". Expected create_tasks_from_text, update_task_status, delete_task, update_task_properties, create_board, update_board, delete_board, create_column, update_column, or delete_column.`
       );
     }
   } catch (error) {
@@ -123,6 +204,7 @@ interface PersistTaskCreationInput {
   result: {
     tasks: Array<{
       caseNumber: string;
+      title: string;
       description: string;
       status: string;
       priority: string;
@@ -163,7 +245,7 @@ async function persistTaskCreation({
 
     const notesData = tasks.map((task) => ({
       caseNumber: task.caseNumber,
-      title: task.caseNumber,
+      title: task.title,
       body: task.description,
       status: task.status,
       priority: task.priority,
@@ -354,6 +436,7 @@ interface PersistTaskPropertiesUpdateInput {
   result: {
     caseNumber: string;
     newCaseNumber?: string;
+    newTitle?: string;
     newDescription?: string;
     newPriority?: string;
   };
@@ -364,7 +447,7 @@ async function persistTaskPropertiesUpdate({
   command,
   result,
 }: PersistTaskPropertiesUpdateInput) {
-  const { caseNumber, newCaseNumber, newDescription, newPriority } = result;
+  const { caseNumber, newCaseNumber, newTitle, newDescription, newPriority } = result;
 
   await prisma.$transaction(async (tx) => {
     const conversation = await tx.conversation.findUnique({
@@ -417,7 +500,10 @@ async function persistTaskPropertiesUpdate({
 
     if (newCaseNumber) {
       updateData.caseNumber = newCaseNumber;
-      updateData.title = newCaseNumber;
+    }
+
+    if (newTitle) {
+      updateData.title = newTitle;
     }
 
     if (newDescription) {
@@ -436,6 +522,9 @@ async function persistTaskPropertiesUpdate({
     const changes = [];
     if (newCaseNumber) {
       changes.push(`renamed to ${newCaseNumber}`);
+    }
+    if (newTitle) {
+      changes.push("title updated");
     }
     if (newDescription) {
       changes.push("description updated");
@@ -461,6 +550,501 @@ async function persistTaskPropertiesUpdate({
           content: `${caseNumber} ${changes.join(" and ")}.`,
           metadata: {
             type: "update-task-properties-response",
+            promptVersion: GEMINI_PROMPT_VERSION,
+            result,
+          },
+        },
+      ],
+    });
+  });
+}
+
+interface PersistBoardCreationInput {
+  conversationId: string;
+  command: string;
+  result: {
+    name: string;
+    columns?: Array<{
+      title: string;
+      helper?: string;
+    }>;
+  };
+}
+
+async function persistBoardCreation({
+  conversationId,
+  command,
+  result,
+}: PersistBoardCreationInput) {
+  const { name, columns } = result;
+
+  const board = await prisma.$transaction(async (tx) => {
+    const conversation = await tx.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true },
+    });
+
+    if (!conversation) {
+      throw new NotFoundError("Conversation not found.");
+    }
+
+    const defaultColumns = columns || [
+      { title: "Backlog", helper: "Tasks to be done" },
+      { title: "In Progress", helper: "Tasks being worked on" },
+      { title: "Testing", helper: "Tasks being tested" },
+      { title: "Done", helper: "Completed tasks" },
+    ];
+
+    const newBoard = await tx.board.create({
+      data: {
+        name,
+        title: name,
+        columns: {
+          create: defaultColumns.map((col, index) => ({
+            title: col.title,
+            helper: col.helper,
+            order: index,
+          })),
+        },
+      },
+      include: {
+        columns: {
+          orderBy: { order: "asc" },
+        },
+      },
+    });
+
+    await tx.conversationMessage.createMany({
+      data: [
+        {
+          conversationId,
+          role: "USER",
+          content: command,
+          metadata: {
+            type: "create-board-request",
+            promptVersion: GEMINI_PROMPT_VERSION,
+          },
+        },
+        {
+          conversationId,
+          role: "ASSISTANT",
+          content: `Created board "${name}" with ${defaultColumns.length} column(s).`,
+          metadata: {
+            type: "create-board-response",
+            promptVersion: GEMINI_PROMPT_VERSION,
+            result,
+          },
+        },
+      ],
+    });
+
+    return newBoard;
+  });
+
+  return board;
+}
+
+interface PersistBoardUpdateInput {
+  conversationId: string;
+  command: string;
+  result: {
+    name: string;
+  };
+  boardId?: string;
+}
+
+async function persistBoardUpdate({
+  conversationId,
+  command,
+  result,
+  boardId,
+}: PersistBoardUpdateInput) {
+  const { name } = result;
+
+  if (!boardId) {
+    throw new NotFoundError("No active board to update.");
+  }
+
+  const board = await prisma.$transaction(async (tx) => {
+    const conversation = await tx.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true },
+    });
+
+    if (!conversation) {
+      throw new NotFoundError("Conversation not found.");
+    }
+
+    const existingBoard = await tx.board.findUnique({
+      where: { id: boardId },
+    });
+
+    if (!existingBoard) {
+      throw new NotFoundError("Board not found.");
+    }
+
+    const updatedBoard = await tx.board.update({
+      where: { id: boardId },
+      data: { name },
+      include: {
+        columns: {
+          orderBy: { order: "asc" },
+        },
+      },
+    });
+
+    await tx.conversationMessage.createMany({
+      data: [
+        {
+          conversationId,
+          role: "USER",
+          content: command,
+          metadata: {
+            type: "update-board-request",
+            promptVersion: GEMINI_PROMPT_VERSION,
+          },
+        },
+        {
+          conversationId,
+          role: "ASSISTANT",
+          content: `Board renamed to "${name}".`,
+          metadata: {
+            type: "update-board-response",
+            promptVersion: GEMINI_PROMPT_VERSION,
+            result,
+          },
+        },
+      ],
+    });
+
+    return updatedBoard;
+  });
+
+  return board;
+}
+
+interface PersistBoardDeletionInput {
+  conversationId: string;
+  command: string;
+  result: {
+    confirmed: boolean;
+  };
+  boardId?: string;
+}
+
+async function persistBoardDeletion({
+  conversationId,
+  command,
+  result,
+  boardId,
+}: PersistBoardDeletionInput) {
+  const { confirmed } = result;
+
+  if (!confirmed) {
+    throw new Error("Board deletion not confirmed.");
+  }
+
+  if (!boardId) {
+    throw new NotFoundError("No active board to delete.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const conversation = await tx.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true },
+    });
+
+    if (!conversation) {
+      throw new NotFoundError("Conversation not found.");
+    }
+
+    const board = await tx.board.findUnique({
+      where: { id: boardId },
+    });
+
+    if (!board) {
+      throw new NotFoundError("Board not found.");
+    }
+
+    await tx.board.delete({
+      where: { id: boardId },
+    });
+
+    await tx.conversationMessage.createMany({
+      data: [
+        {
+          conversationId,
+          role: "USER",
+          content: command,
+          metadata: {
+            type: "delete-board-request",
+            promptVersion: GEMINI_PROMPT_VERSION,
+          },
+        },
+        {
+          conversationId,
+          role: "ASSISTANT",
+          content: `Board "${board.name}" has been deleted.`,
+          metadata: {
+            type: "delete-board-response",
+            promptVersion: GEMINI_PROMPT_VERSION,
+            result,
+          },
+        },
+      ],
+    });
+  });
+}
+
+interface PersistColumnCreationInput {
+  conversationId: string;
+  command: string;
+  result: {
+    title: string;
+    helper?: string;
+  };
+  boardId?: string;
+}
+
+async function persistColumnCreation({
+  conversationId,
+  command,
+  result,
+  boardId,
+}: PersistColumnCreationInput) {
+  const { title, helper } = result;
+
+  if (!boardId) {
+    throw new NotFoundError("No active board to add column to.");
+  }
+
+  const column = await prisma.$transaction(async (tx) => {
+    const conversation = await tx.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true },
+    });
+
+    if (!conversation) {
+      throw new NotFoundError("Conversation not found.");
+    }
+
+    const board = await tx.board.findUnique({
+      where: { id: boardId },
+      include: {
+        columns: true,
+      },
+    });
+
+    if (!board) {
+      throw new NotFoundError("Board not found.");
+    }
+
+    const maxOrder = board.columns.length > 0
+      ? Math.max(...board.columns.map((c) => c.order))
+      : -1;
+
+    const newColumn = await tx.boardColumn.create({
+      data: {
+        boardId,
+        title,
+        helper,
+        order: maxOrder + 1,
+      },
+    });
+
+    await tx.conversationMessage.createMany({
+      data: [
+        {
+          conversationId,
+          role: "USER",
+          content: command,
+          metadata: {
+            type: "create-column-request",
+            promptVersion: GEMINI_PROMPT_VERSION,
+          },
+        },
+        {
+          conversationId,
+          role: "ASSISTANT",
+          content: `Column "${title}" added to board.`,
+          metadata: {
+            type: "create-column-response",
+            promptVersion: GEMINI_PROMPT_VERSION,
+            result,
+          },
+        },
+      ],
+    });
+
+    return newColumn;
+  });
+
+  return column;
+}
+
+interface PersistColumnUpdateInput {
+  conversationId: string;
+  command: string;
+  result: {
+    title: string;
+    newTitle?: string;
+    newHelper?: string;
+  };
+  boardId?: string;
+}
+
+async function persistColumnUpdate({
+  conversationId,
+  command,
+  result,
+  boardId,
+}: PersistColumnUpdateInput) {
+  const { title, newTitle, newHelper } = result;
+
+  if (!boardId) {
+    throw new NotFoundError("No active board to update column in.");
+  }
+
+  const column = await prisma.$transaction(async (tx) => {
+    const conversation = await tx.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true },
+    });
+
+    if (!conversation) {
+      throw new NotFoundError("Conversation not found.");
+    }
+
+    const existingColumn = await tx.boardColumn.findFirst({
+      where: {
+        boardId,
+        title,
+      },
+    });
+
+    if (!existingColumn) {
+      throw new NotFoundError(`Column "${title}" not found.`);
+    }
+
+    const updateData: {
+      title?: string;
+      helper?: string;
+    } = {};
+
+    if (newTitle) {
+      updateData.title = newTitle;
+    }
+
+    if (newHelper !== undefined) {
+      updateData.helper = newHelper;
+    }
+
+    const updatedColumn = await tx.boardColumn.update({
+      where: { id: existingColumn.id },
+      data: updateData,
+    });
+
+    const changes = [];
+    if (newTitle) {
+      changes.push(`renamed to "${newTitle}"`);
+    }
+    if (newHelper !== undefined) {
+      changes.push("helper text updated");
+    }
+
+    await tx.conversationMessage.createMany({
+      data: [
+        {
+          conversationId,
+          role: "USER",
+          content: command,
+          metadata: {
+            type: "update-column-request",
+            promptVersion: GEMINI_PROMPT_VERSION,
+          },
+        },
+        {
+          conversationId,
+          role: "ASSISTANT",
+          content: `Column "${title}" ${changes.join(" and ")}.`,
+          metadata: {
+            type: "update-column-response",
+            promptVersion: GEMINI_PROMPT_VERSION,
+            result,
+          },
+        },
+      ],
+    });
+
+    return updatedColumn;
+  });
+
+  return column;
+}
+
+interface PersistColumnDeletionInput {
+  conversationId: string;
+  command: string;
+  result: {
+    title: string;
+  };
+  boardId?: string;
+}
+
+async function persistColumnDeletion({
+  conversationId,
+  command,
+  result,
+  boardId,
+}: PersistColumnDeletionInput) {
+  const { title } = result;
+
+  if (!boardId) {
+    throw new NotFoundError("No active board to delete column from.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const conversation = await tx.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true },
+    });
+
+    if (!conversation) {
+      throw new NotFoundError("Conversation not found.");
+    }
+
+    const column = await tx.boardColumn.findFirst({
+      where: {
+        boardId,
+        title,
+      },
+    });
+
+    if (!column) {
+      throw new NotFoundError(`Column "${title}" not found.`);
+    }
+
+    await tx.boardColumn.delete({
+      where: { id: column.id },
+    });
+
+    await tx.conversationMessage.createMany({
+      data: [
+        {
+          conversationId,
+          role: "USER",
+          content: command,
+          metadata: {
+            type: "delete-column-request",
+            promptVersion: GEMINI_PROMPT_VERSION,
+          },
+        },
+        {
+          conversationId,
+          role: "ASSISTANT",
+          content: `Column "${title}" has been deleted.`,
+          metadata: {
+            type: "delete-column-response",
             promptVersion: GEMINI_PROMPT_VERSION,
             result,
           },

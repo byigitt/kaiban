@@ -6,7 +6,7 @@ import {
   createTasksArgsSchema,
 } from "@/lib/gemini-contract";
 import { invokeGemini } from "@/lib/gemini";
-import { prisma } from "@/lib/prisma";
+import { prisma, getNextCaseNumber } from "@/lib/prisma";
 
 const requestSchema = z.object({
   text: z.string().min(1, "Provide at least one line of text."),
@@ -34,7 +34,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const functionCall = await invokeGemini(parsed.data.text);
+    const nextCaseNumber = await getNextCaseNumber();
+    const augmentedPrompt = `${parsed.data.text}\n\n[System: Start task numbering from TASK-${nextCaseNumber}]`;
+    const functionCall = await invokeGemini(augmentedPrompt);
     if (functionCall.name !== "create_tasks_from_text") {
       throw new Error(
         `Unexpected function call "${functionCall.name}". Expected create_tasks_from_text.`
@@ -68,7 +70,7 @@ export async function POST(request: Request) {
 
 interface PersistBoardCreationInput {
   text: string;
-  tasks: { caseNumber: string; description: string; status: string; priority: string }[];
+  tasks: { caseNumber: string; title: string; description: string; status: string; priority: string }[];
   boardId?: string;
 }
 
@@ -109,7 +111,7 @@ async function persistBoardCreation({
 
   await prisma.note.createMany({
     data: tasks.map((task) => ({
-      title: task.caseNumber,
+      title: task.title,
       body: task.description,
       caseNumber: task.caseNumber,
       status: task.status,
