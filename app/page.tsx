@@ -32,7 +32,14 @@ export default function HomePage() {
   const [activeBoard, setActiveBoard] = React.useState<Board | null>(null);
   const [isClearingBoard, setIsClearingBoard] = React.useState(false);
 
-  const { width: chatWidth, isResizing, handleMouseDown } = useResize(480);
+  const {
+    width: chatWidth,
+    isResizing,
+    handleMouseDown,
+    toggleCollapse,
+    lastWidthRef,
+  } = useResize(480);
+  const [isChatCollapsed, setIsChatCollapsed] = React.useState(false);
 
   const {
     tasks,
@@ -196,10 +203,18 @@ export default function HomePage() {
         hasTasks={tasks.length > 0}
         onSendMessage={sendMessage}
         onClearChat={handleClearChat}
-        width={chatWidth}
+        width={isChatCollapsed ? 0 : chatWidth}
         isResizing={isResizing}
         onResizeStart={handleMouseDown}
         messagesEndRef={messagesEndRef}
+        isCollapsed={isChatCollapsed}
+        onToggleCollapse={() => {
+          setIsChatCollapsed((collapsed) => {
+            const next = !collapsed;
+            toggleCollapse(next);
+            return next;
+          });
+        }}
       />
 
       <TaskDetailDrawer
@@ -207,7 +222,7 @@ export default function HomePage() {
         open={isTaskDrawerOpen}
         onOpenChange={setIsTaskDrawerOpen}
         onDelete={removeTask}
-        chatWidth={chatWidth}
+        chatWidth={isChatCollapsed ? 0 : lastWidthRef.current}
       />
     </main>
   );
