@@ -217,6 +217,48 @@ export function useBoardManager({
     [activeBoard?.id, boards, selectBoard, setNotice, setTasks]
   );
 
+  const clearBoard = React.useCallback(
+    async (id: string) => {
+      const response = await fetch(`/api/boards/${id}/clear`, {
+        method: "POST",
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message =
+          data && typeof data === "object" && "error" in data
+            ? String(data.error)
+            : "Failed to clear board.";
+        setNotice({
+          tone: "error",
+          message,
+        });
+        throw new Error(message);
+      }
+
+      setTasks([]);
+      setBoards((previous) =>
+        previous.map((board) =>
+          board.id === id ? { ...board, taskCount: 0 } : board
+        )
+      );
+
+      if (activeBoard?.id === id) {
+        setActiveBoard((prev) => (prev ? { ...prev, taskCount: 0 } : null));
+      }
+
+      setNotice({
+        tone: "info",
+        message:
+          data && typeof data === "object" && "clearedCount" in data
+            ? `Removed ${String(data.clearedCount)} task(s).`
+            : "Board cleared.",
+      });
+    },
+    [activeBoard?.id, setBoards, setNotice, setTasks]
+  );
+
   return {
     boards,
     activeBoard,
@@ -226,5 +268,6 @@ export function useBoardManager({
     createBoard,
     editBoard,
     deleteBoard,
+    clearBoard,
   };
 }

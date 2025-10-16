@@ -30,6 +30,7 @@ export default function HomePage() {
   const [messages, setMessages] = React.useState<ChatMessage[]>([INITIAL_AI_MESSAGE]);
   const [boards, setBoards] = React.useState<Board[]>([]);
   const [activeBoard, setActiveBoard] = React.useState<Board | null>(null);
+  const [isClearingBoard, setIsClearingBoard] = React.useState(false);
 
   const { width: chatWidth, isResizing, handleMouseDown } = useResize(480);
 
@@ -55,6 +56,7 @@ export default function HomePage() {
     createBoard,
     editBoard,
     deleteBoard,
+    clearBoard,
   } = useBoardManager({
     setNotice,
     setTasks,
@@ -102,13 +104,26 @@ export default function HomePage() {
     setIsTaskDrawerOpen(true);
   }, []);
 
-  const handleResetBoard = () => {
-    setTasks([]);
-    setNotice({
-      tone: "info",
-      message: "Board cleared.",
-    });
-  };
+  const handleClearBoard = React.useCallback(async () => {
+    if (!activeBoard) {
+      setNotice({
+        tone: "error",
+        message: "Select a board before clearing.",
+      });
+      return;
+    }
+
+    try {
+      setIsClearingBoard(true);
+      await clearBoard(activeBoard.id);
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error("Failed to clear board:", error);
+      }
+    } finally {
+      setIsClearingBoard(false);
+    }
+  }, [activeBoard, clearBoard, setNotice]);
 
   const handleClearChat = async () => {
     try {
@@ -146,12 +161,12 @@ export default function HomePage() {
           activeBoard={activeBoard}
           taskCount={tasks.length}
           hasTasks={tasks.length > 0}
-          disabled={pendingAction !== null}
+          disabled={pendingAction !== null || isClearingBoard}
           onSelectBoard={selectBoard}
           onCreateBoard={createBoard}
           onEditBoard={editBoard}
           onDeleteBoard={deleteBoard}
-          onClearBoard={handleResetBoard}
+          onClearBoard={handleClearBoard}
         />
 
         <section className="flex min-h-0 flex-1 flex-col">

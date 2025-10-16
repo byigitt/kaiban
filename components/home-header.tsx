@@ -1,6 +1,17 @@
 import { FiTrash2 } from "react-icons/fi";
 import { AppIcon } from "@/components/ui/app-icon";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { BoardSelector } from "@/components/board-selector";
 import { GEMINI_PROMPT_VERSION } from "@/lib/gemini-contract";
 import type { Board } from "@/lib/types/board-types";
@@ -15,7 +26,7 @@ interface HomeHeaderProps {
   onCreateBoard: (name: string) => Promise<void>;
   onEditBoard: (id: string, name: string) => Promise<void>;
   onDeleteBoard: (id: string) => Promise<void>;
-  onClearBoard: () => void;
+  onClearBoard: () => Promise<void>;
 }
 
 export function HomeHeader({
@@ -59,15 +70,38 @@ export function HomeHeader({
           <span aria-hidden="true">•</span>
           <span>Prompt version {GEMINI_PROMPT_VERSION}</span>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onClearBoard}
-          disabled={!hasTasks || disabled}
-        >
-          <FiTrash2 className="size-4" aria-hidden="true" />
-          <span>Clear board</span>
-        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!hasTasks || disabled}
+            >
+              <FiTrash2 className="size-4" aria-hidden="true" />
+              <span>Clear board</span>
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Clear this board?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently remove all tasks from the current board.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  void onClearBoard();
+                }}
+                disabled={disabled}
+              >
+                Clear board
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </header>
   );
