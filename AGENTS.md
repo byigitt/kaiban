@@ -11,7 +11,7 @@
 - Respond with ‘need more information’ if you are unsure about the task
 
 ## Project Structure & Module Organization
-Kaiban is a Next.js 16 App Router project focused on converting natural language into Kanban updates. Pages and layouts live in `app/`; plan to stage Gemini-facing API routes in `app/api/`. Global styles sit in `app/globals.css`; shared UI primitives stay under `components/ui`, hooks in `hooks/`, and helpers in `lib/utils.ts`. Static assets belong in `public/`. Use the `@/*` TypeScript alias instead of deep relative paths.
+Kaiban is a Next.js 16 App Router project focused on converting natural language into Kanban updates. Pages and layouts live in `app/`; Gemini-backed endpoints reside under `app/api/**`. Global styles sit in `app/globals.css`; shared UI primitives stay under `components/ui`, hooks in `hooks/`, and helpers in `lib`. Use the `@/*` alias instead of deep relative paths. Server-side persistence helpers are grouped in `lib/api/*`, Gemini schemas in `lib/gemini-contract.ts`, and the Gemini client wrapper in `lib/gemini.ts`.
 
 ## Build, Test, and Development Commands
 Standardize on pnpm. `pnpm install` respects `pnpm-lock.yaml`. `pnpm build` creates the production bundle; pair with `pnpm start` only when a production check is strictly required. Skip all lint commands; rely on `pnpm typecheck` (tsc --noEmit) only once a task is otherwise complete to validate Gemini contracts and React components without opening a dev server.
@@ -20,7 +20,7 @@ Standardize on pnpm. `pnpm install` respects `pnpm-lock.yaml`. `pnpm build` crea
 Stay in TypeScript (`.ts`/`.tsx`) with two-space indentation and no implicit `any`. File names use kebab-case (`task-card.tsx`), exported components use PascalCase, and hooks retain the `use-` prefix. Keep Gemini JSON schemas in plain `.ts` modules so server routes and client helpers import the same contract. Tailwind utilities live inline; gate conditional styles with `clsx` or `tailwind-merge`.
 
 ## AI Contract & Workflow
-The backend mediates all Gemini calls. Maintain two function schemas: `create_tasks_from_text` turns multi-line input into `{ caseNumber, description, status }` objects (default `In Progress`; keywords like “backlog”, “testing”, “done” override). `update_task_status` extracts `{ caseNumber, newStatus }` from chat commands (map “finished”→`Done`, “testing/QA”→`Testing`, “start work”→`In Progress`). Frontend handlers should consume `functionCall.args` payloads and move cards accordingly. Version prompt and schema changes together to avoid drift.
+The backend mediates all Gemini calls and the function schemas live in `lib/gemini-contract.ts`. Honor the full suite of contracts: `create_tasks_from_text`, `update_task_status`, `delete_task`, `update_task_properties`, `create_board`, `update_board`, `delete_board`, `create_column`, `update_column`, and `delete_column`. Frontend handlers (`use-chat-manager`, `lib/api/chat-handler.ts`, and friends) expect validated `functionCall.args` payloads and will persist updates via the operations modules in `lib/api`. Keep conversational history, Prisma writes, and UI state transitions in sync. Version prompt and schema changes together to avoid drift.
 
 ## Testing Guidelines
 Automated tests are not yet wired. Treat `pnpm typecheck` as the baseline validation; supplement with targeted manual checks without launching a long-running dev server. When introducing tests, colocate `*.test.ts(x)` files or use a `__tests__/` folder, favor React Testing Library, and document any new `pnpm test` script in `package.json`.
