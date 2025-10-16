@@ -19,16 +19,21 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export async function getNextCaseNumber(): Promise<number> {
-  const lastNote = await prisma.note.findFirst({
+  const notes = await prisma.note.findMany({
     where: { caseNumber: { startsWith: "TASK-" } },
-    orderBy: { caseNumber: "desc" },
     select: { caseNumber: true },
   });
 
-  if (!lastNote) {
+  if (notes.length === 0) {
     return 1;
   }
 
-  const match = lastNote.caseNumber.match(/TASK-(\d+)/);
-  return match ? parseInt(match[1], 10) + 1 : 1;
+  const numbers = notes
+    .map((note) => {
+      const match = note.caseNumber.match(/TASK-(\d+)/);
+      return match ? parseInt(match[1], 10) : 0;
+    })
+    .filter((num) => num > 0);
+
+  return numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
 }
