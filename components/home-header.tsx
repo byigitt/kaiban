@@ -44,11 +44,13 @@ export function HomeHeader({
   return (
     <header className="flex shrink-0 items-center justify-between border-b px-8 py-6">
       <div className="flex items-center gap-3">
-        <AppIcon size={32} aria-label="Kaiban icon" className="size-12 shrink-0" />
+        <AppIcon
+          size={32}
+          aria-label="Kaiban icon"
+          className="size-12 shrink-0"
+        />
         <div className="flex flex-col">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Kaiban task board
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Kaiban</h1>
           <p className="text-sm text-muted-foreground">
             Drag, drop, or add work manually while Gemini keeps tasks in sync.
           </p>
